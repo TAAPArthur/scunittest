@@ -20,6 +20,6 @@ test: unit_test
 	./unit_test
 
 clean:
-	rm *.o *.a
+	rm -f *.o *.a unit_test
 .PHONY: test install uninstall clean
 

@@ -3,24 +3,25 @@
 
 typedef struct SCUTEST {
     void(*testFunc)(int i);
-    int end;
-    int exitCode;
     int lineNumber;
     int testNumber;
     const char* name;
     const char* fileName;
     int status;
-}SCUTEST ;
+    int iter;
+    int exitCode;
+    int timeout;
+} SCUTEST ;
 
 typedef struct {
     void(*setUp)();
     void(*tearDown)();
-    int timeout;
     int lineNumber;
     const char* fileName;
+    int timeout;
 } __SCUTEST_SETUP ;
 
-extern SCUTEST __tests[100];
+extern SCUTEST __tests[1000];
 extern __SCUTEST_SETUP __setup[100];
 extern int NUM_TESTS;
 extern int NUM_SETUPS;
@@ -28,22 +29,20 @@ extern int NUM_SETUPS;
 #define __SCUTEST_CAT(x, y) x ## y
 #define _SCUTEST_CAT(x, y) __SCUTEST_CAT(x, y)
 
-#define SCUTEST(name) SCUTEST_ITER(name,1)
-#define SCUTEST_ITER(name,end) SCUTEST_ITER_ERR(name,end,0)
-#define SCUTEST_ERR(name,err) SCUTEST_ITER_ERR(name,1,err)
-#define SCUTEST_ITER_ERR(N,end,err) \
+#define SCUTEST_ITER(N,END) SCUTEST(N, .iter=END)
+#define SCUTEST_ERR(N,ERR) SCUTEST(N, .exitCode=ERR)
+#define SCUTEST_ITER_ERR(N,END,ERR) SCUTEST(N, .iter=END, .exitCode=ERR)
+#define SCUTEST(N, ARGS...) \
  void N(int i); \
 __attribute__((constructor)) static void _SCUTEST_CAT(N, __LINE__)() {\
-    __tests[NUM_TESTS++] = (SCUTEST) {N, end, err, __LINE__, NUM_TESTS, # N,  __FILE__}; \
+    __tests[NUM_TESTS++] = (SCUTEST) {N,  __LINE__, NUM_TESTS, # N,  __FILE__, ARGS}; \
 }\
 void N(int _i __attribute__((unused)))
 
 
-#define SCUTEST_SET_ENV(setUp, tearDown) SCUTEST_SET_ENV_TIMEOUT(setUp, tearDown, 0)
-
-#define SCUTEST_SET_ENV_TIMEOUT(setUp, tearDown, timeout) \
+#define SCUTEST_SET_ENV(setUp, tearDown, ARGS...) \
 __attribute__((constructor)) static void _SCUTEST_CAT(setupTearDown,__LINE__)() {\
-    __setup[NUM_SETUPS++] = (__SCUTEST_SETUP) {setUp, tearDown, timeout, __LINE__, __FILE__}; \
+    __setup[NUM_SETUPS++] = (__SCUTEST_SETUP) {setUp, tearDown, __LINE__, __FILE__, ARGS}; \
 }
 int runUnitTests();
 #ifdef SCUTEST_DEFINE_MAIN
