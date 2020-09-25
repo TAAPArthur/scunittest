@@ -26,6 +26,7 @@ struct FailedTest failedTests[1000];
 static size_t passedCount = 0;
 static int NUM_FAILED_TESTS;
 static bool noFork;
+static bool noBuffer;
 static int childPid;
 static int TIMEOUT = 1;
 
@@ -58,15 +59,17 @@ static void killChild() {
 #include <fcntl.h>
 static int fds[2];
 static void __printStackTrace() {
-    int pid = fork();
-    if(!pid) {
-        dup2(fds[0], STDIN_FILENO);
+    if(!noBuffer) {
+        int pid = fork();
+        if(!pid) {
+            dup2(fds[0], STDIN_FILENO);
+            close(fds[0]);
+            execl("/usr/bin/cat", "/usr/bin/cat", "-", NULL);
+            perror("Failed to print data");
+        }
         close(fds[0]);
-        execl("/usr/bin/cat", "/usr/bin/cat", "-", NULL);
-        perror("Failed to print data");
+        waitpid(pid, NULL, 0);
     }
-    close(fds[0]);
-    waitpid(pid, NULL, 0);
     void* array[32];
     // get void*'s for all entries on the stack
     size_t size = backtrace(array, 32);
@@ -89,15 +92,19 @@ static int runTest(Test* test, int i) {
         }
     printf("%s:%03d %s.%d...", test->fileName, test->lineNumber, test->name, i);
     fflush(NULL);
-    pipe(fds);
+    if(!noBuffer) {
+        pipe(fds);
+    }
     if(noFork || !(childPid = fork())) {
         if(!noFork)
             signal(SIGINT, NULL);
-        fcntl(fds[0], F_SETFD, O_CLOEXEC);
-        dup2(fds[1], STDOUT_FILENO);
-        dup2(fds[1], STDERR_FILENO);
-        close(fds[1]);
-        close(fds[0]);
+        if(!noBuffer) {
+            fcntl(fds[0], F_SETFD, O_CLOEXEC);
+            dup2(fds[1], STDOUT_FILENO);
+            dup2(fds[1], STDERR_FILENO);
+            close(fds[1]);
+            close(fds[0]);
+        }
         createSigAction(SIGALRM, SIG_DFL);
         if(setUpTearDown && setUpTearDown->setUp)
             setUpTearDown->setUp(i);
@@ -111,7 +118,9 @@ static int runTest(Test* test, int i) {
     }
     int exitStatus;
     if(!noFork) {
-        close(fds[1]);
+        if(!noBuffer) {
+            close(fds[1]);
+        }
         if(test->timeout)
             alarm(test->timeout);
         else
@@ -130,7 +139,9 @@ static int runTest(Test* test, int i) {
         __printStackTrace();
     }
     else {
-        close(fds[0]);
+        if(!noBuffer) {
+            close(fds[0]);
+        }
     }
     passedCount += passed;
     return passed;
@@ -141,6 +152,7 @@ int runUnitTests() {
     createSigAction(SIGINT, printResults);
     assert(NUM_TESTS);
     noFork = getenv("NO_FORK");
+    noBuffer = getenv("NO_BUFFER");
     char* file = getenv("TEST_FILE");
     char* func = getenv("TEST_FUNC");
     char* index = func ? strchr(func, '.') : NULL;
