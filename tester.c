@@ -58,18 +58,32 @@ static void killChild() {
 
 #include <fcntl.h>
 static int fds[2];
-static void __printStackTrace() {
-    if(!noBuffer) {
-        int pid = fork();
-        if(!pid) {
-            dup2(fds[0], STDIN_FILENO);
-            close(fds[0]);
-            execl("/usr/bin/cat", "/usr/bin/cat", "-", NULL);
-            perror("Failed to print data");
+static char* buffer;
+static int bufferSize;
+static const int readSize = 255;
+static void drainBuffer() {
+    static int maxBufferSize = readSize * 10;
+    buffer = malloc(maxBufferSize);
+    int result;
+    while(result = read(fds[0], buffer + bufferSize, readSize)) {
+        if(result != -1)
+            bufferSize += result;
+        else
+            perror("Failed to read");
+        if(bufferSize + readSize > maxBufferSize) {
+            maxBufferSize *= 2;
+            buffer = realloc(buffer, maxBufferSize);
         }
-        close(fds[0]);
-        waitpid(pid, NULL, 0);
     }
+    close(fds[0]);
+}
+static void dumpBuffer(int passed) {
+    if(!passed) {
+        write(STDOUT_FILENO, buffer, bufferSize);
+    }
+    free(buffer);
+}
+static void __printStackTrace() {
     void* array[32];
     // get void*'s for all entries on the stack
     size_t size = backtrace(array, 32);
@@ -125,6 +139,10 @@ static int runTest(Test* test, int i) {
             alarm(test->timeout);
         else
             alarm(setUpTearDown && setUpTearDown->timeout ? setUpTearDown->timeout : TIMEOUT);
+    }
+    if(!noBuffer)
+        drainBuffer();
+    if(!noFork) {
         int status = -1;
         if(-1 == waitpid(childPid, &status, 0)) {
             perror("Failed to wait on child");
@@ -133,15 +151,12 @@ static int runTest(Test* test, int i) {
         alarm(0);
     }
     bool passed = exitStatus == test->exitCode;
+    if(!noBuffer)
+        dumpBuffer(passed);
     printf("%s\n", passed ? "passed" : "failed");
     if(!passed) {
         failedTests[NUM_FAILED_TESTS++] = (struct FailedTest) {test, i, exitStatus};
         __printStackTrace();
-    }
-    else {
-        if(!noBuffer) {
-            close(fds[0]);
-        }
     }
     passedCount += passed;
     return passed;

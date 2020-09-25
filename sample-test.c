@@ -22,6 +22,10 @@ SCUTEST_ITER(test_fork, 2) {
 SCUTEST_ERR(test_err, 2) {
     exit(2);
 }
+SCUTEST(test_large_output) {
+    for(int i = 0; i < 100000; i++)
+        printf("yes");
+}
 
 static void setUp() {
     value = 1;
