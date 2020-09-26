@@ -65,6 +65,7 @@ static void drainBuffer() {
     static int maxBufferSize = readSize * 10;
     buffer = malloc(maxBufferSize);
     int result;
+    bufferSize = 0;
     while(result = read(fds[0], buffer + bufferSize, readSize)) {
         if(result != -1)
             bufferSize += result;
