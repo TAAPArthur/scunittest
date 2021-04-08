@@ -28,7 +28,7 @@ static int NUM_FAILED_TESTS;
 static bool noFork;
 static bool noBuffer;
 static int childPid;
-static int TIMEOUT = 1;
+static int TIMEOUT = 5;
 
 void (*preTestFunc)() = NULL;
 
