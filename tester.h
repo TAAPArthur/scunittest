@@ -34,7 +34,7 @@ extern int NUM_SETUPS;
 #define SCUTEST_ITER_ERR(N,END,ERR) SCUTEST(N, .iter=END, .exitCode=ERR)
 #define SCUTEST(N, ARGS...) \
  void N(int i); \
-__attribute__((constructor)) static void _SCUTEST_CAT(N, __LINE__)() {\
+__attribute__((constructor)) static void _SCUTEST_CAT(__scutest_,_SCUTEST_CAT(N, __LINE__))() {\
     __tests[NUM_TESTS++] = (SCUTEST) {N,  __LINE__, NUM_TESTS, # N,  __FILE__, ARGS}; \
 }\
 void N(int _i __attribute__((unused)))

@@ -49,18 +49,14 @@ static void printResults(int signal) {
         exit(signal);
 }
 
-static void killChild() {
-    printf("Aborting\n");
-    if(kill(childPid, SIGKILL)) {
-        perror("Failed to kill child");
-    }
-}
-
 #include <fcntl.h>
 static int fds[2];
 static char* buffer;
 static int bufferSize;
-static const int readSize = 255;
+#define readSize 255
+static void closeChildOutput() {
+    close(fds[0]);
+}
 static void drainBuffer() {
     static int maxBufferSize = readSize * 10;
     buffer = malloc(maxBufferSize);
@@ -69,8 +65,10 @@ static void drainBuffer() {
     while(result = read(fds[0], buffer + bufferSize, readSize)) {
         if(result != -1)
             bufferSize += result;
-        else
+        else {
             perror("Failed to read");
+            break;
+        }
         if(bufferSize + readSize > maxBufferSize) {
             maxBufferSize *= 2;
             buffer = realloc(buffer, maxBufferSize);
@@ -80,9 +78,18 @@ static void drainBuffer() {
 }
 static void dumpBuffer(int passed) {
     if(!passed) {
-        write(STDOUT_FILENO, buffer, bufferSize);
+        if(bufferSize)
+            write(STDOUT_FILENO, buffer, bufferSize);
     }
     free(buffer);
+}
+
+static void killChild() {
+    printf("Aborting\n");
+    closeChildOutput();
+    if(kill(childPid, SIGKILL)) {
+        perror("Failed to kill child");
+    }
 }
 static void __printStackTrace() {
     void* array[32];
@@ -131,7 +138,7 @@ static int runTest(Test* test, int i) {
         if(!noFork)
             exit(0);
     }
-    int exitStatus;
+    int exitStatus = -1;
     if(!noFork) {
         if(!noBuffer) {
             close(fds[1]);
