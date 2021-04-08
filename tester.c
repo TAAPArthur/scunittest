@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <errno.h>
-#include <execinfo.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -91,13 +90,7 @@ static void killChild() {
         perror("Failed to kill child");
     }
 }
-static void __printStackTrace() {
-    void* array[32];
-    // get void*'s for all entries on the stack
-    size_t size = backtrace(array, 32);
-    // print out all the frames to stderr
-    backtrace_symbols_fd(array, size, STDOUT_FILENO);
-}
+
 static int createSigAction(int sig, void(*callback)(int)) {
     struct sigaction sa;
     sa.sa_handler = callback;
@@ -164,7 +157,6 @@ static int runTest(Test* test, int i) {
     printf("%s\n", passed ? "passed" : "failed");
     if(!passed) {
         failedTests[NUM_FAILED_TESTS++] = (struct FailedTest) {test, i, exitStatus};
-        __printStackTrace();
     }
     passedCount += passed;
     return passed;
