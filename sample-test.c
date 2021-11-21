@@ -1,8 +1,9 @@
 #define SCUTEST_DEFINE_MAIN
-#include "tester.h"
+#define SCUTEST_IMPLEMENTATION
+#include "scutest.h"
 #include <assert.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 SCUTEST(test_assert) {
@@ -27,6 +28,11 @@ SCUTEST(test_large_output) {
         printf("yes");
 }
 
+SCUTEST_SET_FIXTURE_NO_ARGS(NULL, NULL);
+SCUTEST_NO_ARGS(test_assert_no_args) {
+    assert(1);
+}
+
 static void setUp() {
     value = 1;
 }
@@ -34,7 +40,7 @@ static void tearDown() {
     if(value != 1)
         exit(6);
 }
-SCUTEST_SET_ENV(setUp, tearDown);
+SCUTEST_SET_FIXTURE(setUp, tearDown);
 
 SCUTEST(test_setup_fork) {
     assert(value == 1);
@@ -50,7 +56,7 @@ static void tearDownI(int i) {
     assert(savedIndex == i);
 }
 
-SCUTEST_SET_ENV(setUpI, tearDownI);
+SCUTEST_SET_FIXTURE(setUpI, tearDownI);
 SCUTEST(test_setup_index, .iter = 2) {
     assert(_i == savedIndex);
 }
@@ -69,7 +75,7 @@ SCUTEST(test_timeout_single_test, .exitCode = 9, .timeout = 1) {
     msleep(4000);
     assert(0);
 }
-SCUTEST_SET_ENV(NULL, NULL, .timeout = 1);
+SCUTEST_SET_FIXTURE(NULL, NULL, .timeout = 1);
 SCUTEST_ITER_ERR(test_timeout, 2, 9) {
     msleep(4000);
     assert(0);

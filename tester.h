@@ -1,17 +1,17 @@
-#ifndef MPX_TESTER_H
-#define MPX_TESTER_H
+#ifndef SCUTEST_H
+#define SCUTEST_H
 
-typedef struct SCUTEST {
+typedef struct {
     void(*testFunc)(int i);
     int lineNumber;
     int testNumber;
     const char* name;
     const char* fileName;
-    int status;
+    char status;
     int iter;
-    int exitCode;
+    char exitCode;
     int timeout;
-} SCUTEST ;
+} SCUTEST_TestInfo;
 
 typedef struct {
     void(*setUp)();
@@ -19,12 +19,12 @@ typedef struct {
     int lineNumber;
     const char* fileName;
     int timeout;
-} __SCUTEST_SETUP ;
+} SCUTEST_FixtureInfo;
 
-extern SCUTEST __tests[1000];
-extern __SCUTEST_SETUP __setup[100];
-extern int NUM_TESTS;
-extern int NUM_SETUPS;
+extern SCUTEST_TestInfo _SCUTEST_tests[];
+extern SCUTEST_FixtureInfo _SCUTEST_fixtures[];
+extern int SCUTEST_NUM_TESTS;
+extern int SCUTEST_NUM_FIXTURES;
 
 #define __SCUTEST_CAT(x, y) x ## y
 #define _SCUTEST_CAT(x, y) __SCUTEST_CAT(x, y)
@@ -32,19 +32,25 @@ extern int NUM_SETUPS;
 #define SCUTEST_ITER(N,END) SCUTEST(N, .iter=END)
 #define SCUTEST_ERR(N,ERR) SCUTEST(N, .exitCode=ERR)
 #define SCUTEST_ITER_ERR(N,END,ERR) SCUTEST(N, .iter=END, .exitCode=ERR)
-#define SCUTEST(N, ARGS...) \
+#define SCUTEST_NO_ARGS(N) SCUTEST(N, 0)
+#define SCUTEST(N, ...) \
  void N(int i); \
 __attribute__((constructor)) static void _SCUTEST_CAT(__scutest_,_SCUTEST_CAT(N, __LINE__))() {\
-    __tests[NUM_TESTS++] = (SCUTEST) {N,  __LINE__, NUM_TESTS, # N,  __FILE__, ARGS}; \
+    _SCUTEST_tests[SCUTEST_NUM_TESTS++] = (SCUTEST_TestInfo) {N,  __LINE__, SCUTEST_NUM_TESTS, # N,  __FILE__, __VA_ARGS__}; \
 }\
 void N(int _i __attribute__((unused)))
 
 
-#define SCUTEST_SET_ENV(setUp, tearDown, ARGS...) \
+// Legacy macro major
+#define SCUTEST_SET_ENV(...) SCUTEST_SET_FIXTURE(__VA_ARGS__)
+
+#define SCUTEST_SET_FIXTURE_NO_ARGS(setUp, tearDown) SCUTEST_SET_FIXTURE(setUp, tearDown, 0)
+#define SCUTEST_SET_FIXTURE(setUp, tearDown, ...) \
 __attribute__((constructor)) static void _SCUTEST_CAT(setupTearDown,__LINE__)() {\
-    __setup[NUM_SETUPS++] = (__SCUTEST_SETUP) {setUp, tearDown, __LINE__, __FILE__, ARGS}; \
+    _SCUTEST_fixtures[SCUTEST_NUM_FIXTURES++] = (SCUTEST_FixtureInfo) {setUp, tearDown, __LINE__, __FILE__, __VA_ARGS__}; \
 }
 int runUnitTests();
+int runUnitTests2(const char* file, const char* func, int index, int noFork, int noBuffer, int strict);
 #ifdef SCUTEST_DEFINE_MAIN
 int main() { return runUnitTests(); }
 #endif

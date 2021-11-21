@@ -1,114 +1,162 @@
-#include <assert.h>
+#if defined(SCUTEST_IMPLEMENTATION) || ! defined(SCUTEST_H)
+#define _XOPEN_SOURCE 700
 #include <errno.h>
 #include <signal.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+
+#ifndef SCUTEST_NO_STDLIB
+#include <stdlib.h>
+#define SCUTEST_ATOI(nptr) atoi(nptr)
+#else
+#define SCUTEST_ATOI(nptr) (nptr[0] >= '0' && nptr[0] <= '9' ? nptr[0] - '0' : -1)
+#endif
+
+#if ! defined(SCUTEST_NO_STDLIB) && ! defined(SCUTEST_EXIT_FUNC)
+#define SCUTEST_EXIT_FUNC(R) exit(R)
+#elif defined(SCUTEST_NO_STDLIB)
+#define SCUTEST_EXIT_FUNC(R)
+#endif
+
+#if ! defined(SCUTEST_NO_STDLIB) && !(defined SCUTEST_GETENV_FUNC)
+#define SCUTEST_GETENV_FUNC(R) getenv(R)
+#elif defined(SCUTEST_NO_STDLIB)
+#define SCUTEST_GETENV_FUNC(R) NULL
+#endif
+
+#ifndef SCUTEST_NO_STDIO
+#include <stdio.h>
+#define SCUTEST_PRINTF(...) printf(__VA_ARGS__)
+#define SCUTEST_PERROR(MSG) perror(MSG)
+#define SCUTEST_FLUSH() fflush(NULL)
+#else
+#define SCUTEST_PRINTF(...)
+#define SCUTEST_PERROR(MSG)
+#define SCUTEST_FLUSH()
+#endif
+
+#if ! defined(SCUTEST_NO_BUFFER) && ! defined(SCUTEST_NO_STDLIB)
+#include <fcntl.h>
+#endif
+
+#ifndef SCUTEST_H
 #include "tester.h"
+#endif
 
-void(*TESTS[100])(void);
-int NUM_TESTS;
+#ifndef SCUTEST_MAX_NUM_TESTS
+#define SCUTEST_MAX_NUM_TESTS 1024
+#endif
 
-__SCUTEST_SETUP __setup[100];
-int NUM_SETUPS;
+#ifndef SCUTEST_MAX_NUM_FIXTURES
+#define SCUTEST_MAX_NUM_FIXTURES 100
+#endif
 
-SCUTEST __tests[1000];
+#ifndef SCUTEST_BUFFER_READ_SIZE
+#define SCUTEST_BUFFER_READ_SIZE 255
+#endif
+
+#ifndef SCUTEST_DEFAULT_TIMEOUT
+#define SCUTEST_DEFAULT_TIMEOUT 5
+#endif
+
+int SCUTEST_NUM_TESTS;
+int SCUTEST_NUM_FIXTURES;
+SCUTEST_FixtureInfo _SCUTEST_fixtures[SCUTEST_MAX_NUM_FIXTURES];
+
+SCUTEST_TestInfo _SCUTEST_tests[SCUTEST_MAX_NUM_TESTS];
 
 
-typedef SCUTEST  Test;
-struct FailedTest {Test* t; int index; int status;};
-struct FailedTest failedTests[1000];
-static size_t passedCount = 0;
-static int NUM_FAILED_TESTS;
-static bool noFork;
-static bool noBuffer;
-static int childPid;
-static int TIMEOUT = 5;
+struct SCUTEST_FailedTest {SCUTEST_TestInfo* t; int index; int status;};
+static struct SCUTEST_FailedTest failedTests[SCUTEST_MAX_NUM_TESTS];
+static size_t SCUTEST_PASSED_COUNT = 0;
+static int SCUTEST_NUM_FAILED_TESTS;
+static int SCUTEST_CHILD_PID;
 
-void (*preTestFunc)() = NULL;
-
-static void printResults(int signal) {
+static void SCUTEST_printResults(int signal) {
     if(signal)
-        printf("aborting\n");
-    printf("....................\n");
-    printf("Passed %ld/%ld tests\n", passedCount, passedCount + NUM_FAILED_TESTS);
-    for(int i = 0; i < NUM_FAILED_TESTS; i++) {
-        Test* t = failedTests[i].t;
+        SCUTEST_PRINTF("aborting\n");
+    SCUTEST_PRINTF("....................\n");
+    SCUTEST_PRINTF("Passed %ld/%ld tests\n", SCUTEST_PASSED_COUNT, SCUTEST_PASSED_COUNT + SCUTEST_NUM_FAILED_TESTS);
+    for(int i = 0; i < SCUTEST_NUM_FAILED_TESTS; i++) {
+        SCUTEST_TestInfo* t = failedTests[i].t;
         int index = failedTests[i].index;
         int status = failedTests[i].status;
-        printf("%s:%03d %s.%d (of %d) #%02d failed with status %d\n",
+        SCUTEST_PRINTF("%s:%03d %s.%d (of %d) #%02d failed with status %d\n",
             t->fileName, t->lineNumber, t->name, index, t->iter, t->testNumber,
             status);
     }
     if(signal)
-        exit(signal);
+        SCUTEST_EXIT_FUNC(signal);
 }
 
-#include <fcntl.h>
-static int fds[2];
-static char* buffer;
-static int bufferSize;
-#define readSize 255
-static void drainBuffer() {
-    static int maxBufferSize = readSize * 10;
+#ifndef SCUTEST_NO_BUFFER
+static void SCUTEST_drainBuffer(int fd, void* buffer, int*bufferSize) {
+    static int maxBufferSize = SCUTEST_BUFFER_READ_SIZE;
     buffer = malloc(maxBufferSize);
     int result;
-    bufferSize = 0;
-    while(result = read(fds[0], buffer + bufferSize, readSize)) {
+    *bufferSize = 0;
+    while(result = read(fd, buffer + *bufferSize, SCUTEST_BUFFER_READ_SIZE)) {
         if(result != -1)
-            bufferSize += result;
+            *bufferSize += result;
         else {
-            perror("Failed to read");
+            SCUTEST_PERROR("Failed to read");
             break;
         }
-        if(bufferSize + readSize > maxBufferSize) {
+        if(*bufferSize + SCUTEST_BUFFER_READ_SIZE > maxBufferSize) {
             maxBufferSize *= 2;
             buffer = realloc(buffer, maxBufferSize);
         }
     }
-    close(fds[0]);
+    close(fd);
 }
-static void dumpBuffer(int passed) {
+static void SCUTEST_dumpBuffer(void* buffer, int bufferSize, int passed) {
     if(!passed) {
         if(bufferSize)
             write(STDOUT_FILENO, buffer, bufferSize);
     }
     free(buffer);
 }
+#endif
 
-static void killChild() {
-    printf("Aborting\n");
-    if(kill(childPid, SIGKILL)) {
-        perror("Failed to kill child");
+static void SCUTEST_killChild() {
+    SCUTEST_PRINTF("Aborting\n");
+    if(kill(SCUTEST_CHILD_PID, SIGKILL)) {
+        SCUTEST_PERROR("Failed to kill child");
     }
 }
 
-static int createSigAction(int sig, void(*callback)(int)) {
+static int SCUTEST_createSigAction(int sig, void(*callback)(int)) {
     struct sigaction sa;
     sa.sa_handler = callback;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART | SA_NODEFER;
     return sigaction(sig, &sa, NULL);
 }
-static int runTest(Test* test, int i) {
-    __SCUTEST_SETUP* setUpTearDown = NULL;
-    for(int i = NUM_SETUPS - 1; i >= 0 ; i--)
-        if(__setup[i].lineNumber < test->lineNumber && strcmp(test->fileName, __setup[i].fileName) == 0) {
-            setUpTearDown = &__setup[i];
+static int SCUTEST_runTest(SCUTEST_TestInfo* test, int i, int noFork, int noBuffer) {
+    SCUTEST_FixtureInfo * setUpTearDown = NULL;
+
+    static int fds[2];
+    static char* buffer;
+    static int bufferSize;
+    for(int i = SCUTEST_NUM_FIXTURES - 1; i >= 0 ; i--)
+        if(_SCUTEST_fixtures[i].lineNumber < test->lineNumber && strcmp(test->fileName, _SCUTEST_fixtures[i].fileName) == 0) {
+            setUpTearDown = &_SCUTEST_fixtures[i];
             break;
         }
-    printf("%s:%03d %s.%d...", test->fileName, test->lineNumber, test->name, i);
-    fflush(NULL);
+    SCUTEST_PRINTF("%s:%03d %s.%d...", test->fileName, test->lineNumber, test->name, i);
+    SCUTEST_FLUSH();
+
+#ifndef SCUTEST_NO_BUFFER
     if(!noBuffer) {
         pipe(fds);
     }
-    if(noFork || !(childPid = fork())) {
+#endif
+    if(noFork || !(SCUTEST_CHILD_PID = fork())) {
         if(!noFork)
             signal(SIGINT, NULL);
+#ifndef SCUTEST_NO_BUFFER
         if(!noBuffer) {
             fcntl(fds[0], F_SETFD, O_CLOEXEC);
             dup2(fds[1], STDOUT_FILENO);
@@ -116,77 +164,86 @@ static int runTest(Test* test, int i) {
             close(fds[1]);
             close(fds[0]);
         }
-        createSigAction(SIGALRM, SIG_DFL);
+#endif
+        SCUTEST_createSigAction(SIGALRM, SIG_DFL);
         if(setUpTearDown && setUpTearDown->setUp)
             setUpTearDown->setUp(i);
-        if(preTestFunc)
-            preTestFunc();
         test->testFunc(i);
         if(setUpTearDown && setUpTearDown->tearDown)
             setUpTearDown->tearDown(i);
         if(!noFork)
-            exit(0);
+            SCUTEST_EXIT_FUNC(0);
     }
     int exitStatus = -1;
     if(!noFork) {
+#ifndef SCUTEST_NO_BUFFER
         if(!noBuffer) {
             close(fds[1]);
         }
+#endif
         if(test->timeout)
             alarm(test->timeout);
         else
-            alarm(setUpTearDown && setUpTearDown->timeout ? setUpTearDown->timeout : TIMEOUT);
+            alarm(setUpTearDown && setUpTearDown->timeout ? setUpTearDown->timeout : SCUTEST_DEFAULT_TIMEOUT);
     }
+#ifndef SCUTEST_NO_BUFFER
     if(!noBuffer)
-        drainBuffer();
+        SCUTEST_drainBuffer(fds[0], buffer, &bufferSize);
+#endif
     if(!noFork) {
         int status = -1;
-        if(-1 == waitpid(childPid, &status, 0)) {
-            perror("Failed to wait on child");
+        if(-1 == waitpid(SCUTEST_CHILD_PID, &status, 0)) {
+            SCUTEST_PERROR("Failed to wait on child");
         }
         exitStatus = WIFEXITED(status) ? WEXITSTATUS(status) : WIFSIGNALED(status) ? WTERMSIG(status) : -1;
         alarm(0);
     }
-    bool passed = exitStatus == test->exitCode;
+    int passed = exitStatus == test->exitCode;
+#ifndef SCUTEST_NO_BUFFER
     if(!noBuffer)
-        dumpBuffer(passed);
-    printf("%s\n", passed ? "passed" : "failed");
+        SCUTEST_dumpBuffer(buffer, bufferSize, passed);
+#endif
+    SCUTEST_PRINTF("%s\n", passed ? "passed" : "failed");
     if(!passed) {
-        failedTests[NUM_FAILED_TESTS++] = (struct FailedTest) {test, i, exitStatus};
+        failedTests[SCUTEST_NUM_FAILED_TESTS++] = (struct SCUTEST_FailedTest) {test, i, exitStatus};
     }
-    passedCount += passed;
+    SCUTEST_PASSED_COUNT += passed;
     return passed;
 }
 
+int runUnitTests2(const char* file, const char* func, int index, int noFork, int noBuffer, int strict) {
+    for(int i = 0; i < SCUTEST_NUM_TESTS; i++) {
+        SCUTEST_TestInfo* t = _SCUTEST_tests + i;
+        if((!file || strcmp(file, t->fileName) == 0) && (!func || strcmp(func, t->name) == 0)) {
+            if(index >= 0)
+                SCUTEST_runTest(t, index, noFork, noBuffer);
+            else
+                for(int i = 0; i < (t->iter ? t->iter : 1); i++)
+                    if(!SCUTEST_runTest(t, i, noFork, noBuffer) && strict == 2)
+                        break;
+            if(strict && SCUTEST_NUM_FAILED_TESTS)
+                break;
+        }
+    }
+    SCUTEST_printResults(0);
+    return SCUTEST_PASSED_COUNT ? 0 : 1;
+}
+
 int runUnitTests() {
-    createSigAction(SIGALRM, killChild);
-    createSigAction(SIGINT, printResults);
-    assert(NUM_TESTS);
-    noFork = getenv("NO_FORK");
-    noBuffer = getenv("NO_BUFFER");
-    char* file = getenv("TEST_FILE");
-    char* func = getenv("TEST_FUNC");
+    SCUTEST_createSigAction(SIGALRM, SCUTEST_killChild);
+    SCUTEST_createSigAction(SIGINT, SCUTEST_printResults);
+    int noFork = !!SCUTEST_GETENV_FUNC("NO_FORK");
+    int noBuffer = !!SCUTEST_GETENV_FUNC("NO_BUFFER");
+    char* file = SCUTEST_GETENV_FUNC("TEST_FILE");
+    char* func = SCUTEST_GETENV_FUNC("TEST_FUNC");
     char* index = func ? strchr(func, '.') : NULL;
     if(index) {
         *index = 0;
         index++;
     }
-    char* strictStr = getenv("STRICT");;
-    bool strict = strictStr ? strcmp(strictStr, "0") : 0;
-    bool veryStrict = strict && strictStr ? strcmp(strictStr, "2") : 0;
-    for(int i = 0; i < NUM_TESTS; i++) {
-        Test* t = __tests + i;
-        if((!file || strcmp(file, t->fileName) == 0) && (!func || strcmp(func, t->name) == 0)) {
-            if(index)
-                runTest(t, atoi(index));
-            else
-                for(int i = 0; i < (t->iter ? t->iter : 1); i++)
-                    if(!runTest(t, i) && veryStrict)
-                        break;
-            if(strict && NUM_FAILED_TESTS)
-                break;
-        }
-    }
-    printResults(0);
-    return NUM_FAILED_TESTS ? 1 : 0;
+    char* strictStr = SCUTEST_GETENV_FUNC("STRICT");
+    int strict = strictStr ? strcmp(strictStr, "0") : 0;
+    int veryStrict = strict && strictStr ? strcmp(strictStr, "2") : 0;
+    return runUnitTests2(file, func, index ? SCUTEST_ATOI(index) : -1, noFork, noBuffer, strictStr ? SCUTEST_ATOI(strictStr ) : 0);
 }
+#endif
