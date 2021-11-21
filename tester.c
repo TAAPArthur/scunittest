@@ -53,9 +53,6 @@ static int fds[2];
 static char* buffer;
 static int bufferSize;
 #define readSize 255
-static void closeChildOutput() {
-    close(fds[0]);
-}
 static void drainBuffer() {
     static int maxBufferSize = readSize * 10;
     buffer = malloc(maxBufferSize);
@@ -85,7 +82,6 @@ static void dumpBuffer(int passed) {
 
 static void killChild() {
     printf("Aborting\n");
-    closeChildOutput();
     if(kill(childPid, SIGKILL)) {
         perror("Failed to kill child");
     }
