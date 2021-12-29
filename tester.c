@@ -226,7 +226,7 @@ int runUnitTests2(const char* file, const char* func, int index, int noFork, int
         }
     }
     SCUTEST_printResults(0);
-    return SCUTEST_PASSED_COUNT ? 0 : 1;
+    return SCUTEST_NUM_FAILED_TESTS ? 1 : 0;
 }
 
 int runUnitTests() {
