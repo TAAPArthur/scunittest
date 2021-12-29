@@ -8,9 +8,13 @@ all: $(HEADER) lib$(pkgname).a
 lib$(pkgname).a: tester.o
 	ar rcs $@ $^
 
-install: lib$(pkgname).a $(HEADER)
-	install -m 0744 -Dt "$(DESTDIR)/usr/lib/" $<
-	install -m 0744 -Dt "$(DESTDIR)/usr/include/$(pkgname)/" $(HEADER)
+install-lib: lib$(pkgname).a
+	install -m 0744 -Dt "$(DESTDIR)/usr/lib/" $^
+
+install-header: $(HEADER)
+	install -m 0744 -Dt "$(DESTDIR)/usr/include/$(pkgname)/" $^
+
+install: install-lib install-header
 
 uninstall:
 	rm -f "$(DESTDIR)/usr/lib/lib$(pkgname).a"

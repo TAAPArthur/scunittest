@@ -15,6 +15,9 @@ SCUTEST(test_assert_index) {
     assert(_i == 0);
 }
 
+/**
+ * Each test runs as its own process so they each start from the same state
+ */
 static int value;
 SCUTEST_ITER(test_fork, 2) {
     assert(value++ == 0);
@@ -23,6 +26,7 @@ SCUTEST_ITER(test_fork, 2) {
 SCUTEST_ERR(test_err, 2) {
     exit(2);
 }
+
 SCUTEST(test_large_output) {
     for(int i = 0; i < 100000; i++)
         printf("yes");
@@ -60,6 +64,9 @@ SCUTEST_SET_FIXTURE(setUpI, tearDownI);
 SCUTEST(test_setup_index, .iter = 2) {
     assert(_i == savedIndex);
 }
+
+/* Clear fixuture */
+SCUTEST_SET_FIXTURE(NULL, NULL);
 /**
  * Sleep of mil milliseconds
  * @param ms number of milliseconds to sleep
@@ -71,6 +78,9 @@ static inline void msleep(int ms) {
     while(nanosleep(&ts, &ts));
 }
 
+/*
+ * When tests timeout they exit with status 9
+ */
 SCUTEST(test_timeout_single_test, .exitCode = 9, .timeout = 1) {
     msleep(4000);
     assert(0);
@@ -79,4 +89,38 @@ SCUTEST_SET_FIXTURE(NULL, NULL, .timeout = 1);
 SCUTEST_ITER_ERR(test_timeout, 2, 9) {
     msleep(4000);
     assert(0);
+}
+
+
+static void saveStatus() {
+    SCUTEST_PASSED_COUNT = SCUTEST_NUM_FAILED_TESTS = 0;
+}
+SCUTEST_SET_FIXTURE(saveStatus, NULL);
+
+SCUTEST(test_exit_status) {
+    static nested = 0;
+    if (nested) {
+        exit(1);
+    }
+    nested = 1;
+    assert(1 == runUnitTests2(__FILE__, "test_exit_status", 0, 0, 0, 0));
+}
+
+SCUTEST(test_no_fork) {
+    setenv("NO_FORK", "1", 1);
+    setenv("TEST_FILE", "__FILE__", 1);
+    setenv("TEST_FUNC", "test_no_fork", 1);
+    static pid;
+    if (pid) {
+        assert(pid == getpid());
+    }
+    pid = getpid();
+    assert(!runUnitTests());
+}
+
+SCUTEST(test_specific_index) {
+    if(_i == 100)
+        return;
+    setenv("TEST_FUNC", "test_specific_index:100", 1);
+    assert(!runUnitTests());
 }
