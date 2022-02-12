@@ -92,9 +92,9 @@ static void SCUTEST_printResults(int signal) {
 }
 
 #ifndef SCUTEST_NO_BUFFER
-static void SCUTEST_drainBuffer(int fd, void* buffer, int*bufferSize) {
+static char* SCUTEST_drainBuffer(int fd, int*bufferSize) {
     static int maxBufferSize = SCUTEST_BUFFER_READ_SIZE;
-    buffer = malloc(maxBufferSize);
+    char* buffer = malloc(maxBufferSize);
     int result;
     *bufferSize = 0;
     while(result = read(fd, buffer + *bufferSize, SCUTEST_BUFFER_READ_SIZE)) {
@@ -110,6 +110,7 @@ static void SCUTEST_drainBuffer(int fd, void* buffer, int*bufferSize) {
         }
     }
     close(fd);
+    return buffer;
 }
 static void SCUTEST_dumpBuffer(void* buffer, int bufferSize, int passed) {
     if(!passed) {
@@ -138,7 +139,6 @@ static int SCUTEST_runTest(SCUTEST_TestInfo* test, int i, int noFork, int noBuff
     SCUTEST_FixtureInfo * setUpTearDown = NULL;
 
     static int fds[2];
-    static char* buffer;
     static int bufferSize;
     for(int i = SCUTEST_NUM_FIXTURES - 1; i >= 0 ; i--)
         if(_SCUTEST_fixtures[i].lineNumber < test->lineNumber && strcmp(test->fileName, _SCUTEST_fixtures[i].fileName) == 0) {
@@ -158,7 +158,6 @@ static int SCUTEST_runTest(SCUTEST_TestInfo* test, int i, int noFork, int noBuff
             signal(SIGINT, NULL);
 #ifndef SCUTEST_NO_BUFFER
         if(!noBuffer) {
-            fcntl(fds[0], F_SETFD, O_CLOEXEC);
             dup2(fds[1], STDOUT_FILENO);
             dup2(fds[1], STDERR_FILENO);
             close(fds[1]);
@@ -187,8 +186,9 @@ static int SCUTEST_runTest(SCUTEST_TestInfo* test, int i, int noFork, int noBuff
             alarm(setUpTearDown && setUpTearDown->timeout ? setUpTearDown->timeout : SCUTEST_DEFAULT_TIMEOUT);
     }
 #ifndef SCUTEST_NO_BUFFER
+    static char* buffer;
     if(!noBuffer)
-        SCUTEST_drainBuffer(fds[0], buffer, &bufferSize);
+        buffer = SCUTEST_drainBuffer(fds[0], &bufferSize);
 #endif
     if(!noFork) {
         int status = -1;
